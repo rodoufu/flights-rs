@@ -7,13 +7,19 @@ use actix_web::{
     HttpServer,
     middleware::Logger,
     post,
-    web,
+    web::{
+        self,
+        Data,
+    },
 };
 use actix_web_prom::{
     PrometheusMetrics,
     PrometheusMetricsBuilder,
 };
 use crate::flight::{
+    Flight,
+    FlightError,
+    FlightInfo,
     FlightRequest,
     FlightResponse,
 };
@@ -35,7 +41,14 @@ async fn handle_flight(
 ) -> web::Json<FlightResponse> {
     info!("got a new request");
     counter.with_label_values(&["endpoint", "method", "status"]).inc();
-    web::Json(FlightResponse::Error { message: "not implemented yet".to_string() })
+
+    let resp: Result<FlightResponse, FlightError> = (&req.0).try_into();
+    match resp {
+        Ok(resp) => web::Json(resp),
+        Err(err) => web::Json(FlightResponse::Error {
+            message: format!("{:?}", err),
+        }),
+    }
 }
 
 #[actix_web::main]
@@ -66,7 +79,7 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move ||
         App::new()
             .wrap(prometheus.clone())
-            .data(flights_counter.clone())
+            .app_data(Data::new(flights_counter.clone()))
             .wrap(Logger::new("%a %{User-Agent}i"))
             .service(handle_flight)
     ).workers(4)
