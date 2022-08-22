@@ -3,6 +3,7 @@ mod flight;
 use actix_web::{
     App,
     get,
+    http::header::ContentType,
     HttpResponse,
     HttpServer,
     middleware::Logger,
@@ -12,23 +13,20 @@ use actix_web::{
         Data,
     },
 };
-use actix_web_prom::{
-    PrometheusMetrics,
-    PrometheusMetricsBuilder,
-};
+use actix_web_prom::PrometheusMetricsBuilder;
 use crate::flight::{
-    Flight,
-    FlightError,
-    FlightInfo,
     FlightRequest,
     FlightResponse,
 };
-use log::info;
+use log::{
+    error,
+    info,
+};
 use prometheus::{
     opts,
     IntCounterVec,
 };
-use std::collections::HashMap;
+use uuid::Uuid;
 
 #[get("/health")]
 async fn health() -> HttpResponse {
@@ -38,16 +36,38 @@ async fn health() -> HttpResponse {
 #[post("/flight")]
 async fn handle_flight(
     req: web::Json<FlightRequest>, counter: web::Data<IntCounterVec>,
-) -> web::Json<FlightResponse> {
-    info!("got a new request");
+) -> HttpResponse {
+    let request_id = Uuid::new_v4();
+    info!("got a request: {:?}", request_id);
     counter.with_label_values(&["endpoint", "method", "status"]).inc();
 
-    let resp: Result<FlightResponse, FlightError> = (&req.0).try_into();
-    match resp {
-        Ok(resp) => web::Json(resp),
-        Err(err) => web::Json(FlightResponse::Error {
+    let resp = match (&req.into_inner()).try_into() {
+        Ok(resp) => resp,
+        Err(err) => FlightResponse::Error {
             message: format!("{:?}", err),
-        }),
+        },
+    };
+    match serde_json::to_string(&resp) {
+        Ok(body) => {
+            match resp {
+                FlightResponse::Ok { .. } => {
+                    info!("finished request {:?} with success", request_id);
+                    HttpResponse::Ok()
+                        .content_type(ContentType::json()).body(body)
+                },
+                FlightResponse::Error { message } => {
+                    info!("finished request {:?} with bad request: {}", request_id, message);
+                    HttpResponse::BadRequest()
+                        .content_type(ContentType::json()).body(body)
+                }
+            }
+        }
+        Err(err) => {
+            error!("finished request {:?} with error {:?}", request_id, err);
+            HttpResponse::InternalServerError()
+                .content_type(ContentType::json())
+                .body(format!("{{\"message\":{:?}}}", err))
+        },
     }
 }
 
@@ -56,9 +76,9 @@ async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
 
     info!("starting application");
-    let port = std::env::var("PORT").unwrap_or("8080".to_string());
+    let port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
     info!("using port: {}", port);
-    let port = port.parse::<u16>().expect(&format!("invalid port value: {}", port));
+    let port = port.parse::<u16>().unwrap_or_else(|_| panic!("invalid port value: {}", port));
 
     let flights_counter_opts = opts!("flight_requests", "number of flight requests")
         .namespace("flights");
@@ -83,7 +103,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(Logger::new("%a %{User-Agent}i"))
             .service(handle_flight)
     ).workers(4)
-        .bind(("127.0.0.1", port))?
+        .bind(("0.0.0.0", port))?
         .run()
         .await
 }
