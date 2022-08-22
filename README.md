@@ -102,10 +102,13 @@ Status code distribution:
 
 * An async log library could be used to detach the request time from writing the logs to the specified output.
 * One could use a smaller and faster protocol such as gRPC or BSON instead of a REST full API.
+* A faster and more high performant HTTP library could be used instead of `actix`, like hyper (https://hyper.rs/)
+* The server number of threads is only controlled by the number of workers that can be selected by the env var `WORKERS`, a better parallelization could be done with better production tests.
+Also the number of cores in the node running it could be considered.
 * The service does not persist anything or read from any other source, this request is basically CPU bound.
-In case one needs to handle scenarios where there are many requests and processing them takes too long, one could change the interface to answer with a receipt id.
-Each request would save the flight info in a persistence and process it async.
-With the receipt id the client would be able to make another request to get the response once it is done, for example:
+  In case one needs to handle scenarios where there are many requests and processing them takes too long, one could change the interface to answer with a receipt id.
+  Each request would save the flight info in a persistence and process it async.
+  With the receipt id the client would be able to make another request to get the response once it is done, for example:
 ```shell
 $ curl -X POST -H 'Content-Type: application/json' localhost:8080/flight -d '{"legs":[["IND","EWR"],["SFO", "ATL"],["GSO", "IND"],["ATL", "GSO"]],"full_path":true}'
 {"type":"Ok","receipt_id":"506909ea-301e-4423-8710-e8559429f768"}
