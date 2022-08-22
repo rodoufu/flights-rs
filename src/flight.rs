@@ -4,14 +4,18 @@ use serde::{
     Serialize,
 };
 
+/// FlightRequest defines the interface for the request.
 #[derive(Clone, Deserialize)]
 pub struct FlightRequest {
+    /// legs are each leg of a flight.
     pub legs: Vec<Vec<String>>,
+    /// full_path indicates if the response should have the path calculated.
     #[serde(default)]
     pub full_path: bool,
 }
 
-#[derive(Serialize)]
+/// FlightResponse contains the response for a request.
+#[derive(Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "type")]
 pub enum FlightResponse {
     Ok {
@@ -34,6 +38,7 @@ pub enum FlightError {
     DestinationNotFound,
 }
 
+/// FlightInfo is the trait of each operation need for the response.
 pub trait FlightInfo {
     fn source(&self) -> String;
     fn destination(&self) -> String;
@@ -145,10 +150,14 @@ impl TryFrom<&FlightRequest> for FlightResponse {
 
 mod test {
     use std::collections::HashMap;
-    use crate::flight::{
-        Flight,
-        FlightError,
-        FlightInfo,
+    use crate::{
+        FlightRequest,
+        FlightResponse,
+        flight::{
+            Flight,
+            FlightError,
+            FlightInfo,
+        }
     };
 
     #[test]
@@ -274,5 +283,78 @@ mod test {
         assert!(path.is_ok());
         let path = path.ok().unwrap();
         assert_eq!(vec!["SFO".to_string(), "EWR".to_string(), "IND".to_string()], path);
+    }
+
+    #[test]
+    fn should_get_an_error_converting_from_flight_request() {
+        // Given
+        let request = FlightRequest { legs: vec![], full_path: false };
+
+        // When
+        let response: Result<FlightResponse, FlightError> = (&request).try_into();
+
+        // Then
+        assert!(response.is_err());
+        assert_eq!(FlightError::SourceNotFound, response.err().unwrap());
+    }
+
+    #[test]
+    fn should_get_flight_response_converting_from_flight_request_no_full_path() {
+        // Given
+        let request = FlightRequest {
+            legs: vec![vec!["A".to_string(), "B".to_string()]],
+            full_path: false,
+        };
+
+        // When
+        let response: Result<FlightResponse, FlightError> = (&request).try_into();
+
+        // Then
+        assert!(response.is_ok());
+        assert_eq!(FlightResponse::Ok {
+            source: "A".to_string(),
+            destination: "B".to_string(),
+            path: None,
+        }, response.ok().unwrap());
+    }
+
+    #[test]
+    fn should_get_flight_response_converting_from_flight_request_with_full_path() {
+        // Given
+        let request = FlightRequest {
+            legs: vec![vec!["A".to_string(), "B".to_string()]],
+            full_path: true,
+        };
+
+        // When
+        let response: Result<FlightResponse, FlightError> = (&request).try_into();
+
+        // Then
+        assert!(response.is_ok());
+        assert_eq!(FlightResponse::Ok {
+            source: "A".to_string(),
+            destination: "B".to_string(),
+            path: Some(vec!["A".to_string(), "B".to_string()]),
+        }, response.ok().unwrap());
+    }
+
+    #[test]
+    fn should_get_flight_response_converting_from_flight_request_with_full_path_error() {
+        // Given
+        let request = FlightRequest {
+            legs: vec![
+                vec!["A".to_string(), "B".to_string()],
+                vec!["B".to_string(), "C".to_string()],
+                vec!["B".to_string(), "C".to_string()],
+            ],
+            full_path: true,
+        };
+
+        // When
+        let response: Result<FlightResponse, FlightError> = (&request).try_into();
+
+        // Then
+        assert!(response.is_err());
+        assert_eq!(FlightError::DestinationNotFound, response.err().unwrap());
     }
 }

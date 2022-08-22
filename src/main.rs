@@ -80,6 +80,11 @@ async fn main() -> std::io::Result<()> {
     info!("using port: {}", port);
     let port = port.parse::<u16>().unwrap_or_else(|_| panic!("invalid port value: {}", port));
 
+    let workers = std::env::var("WORKERS").unwrap_or_else(|_| "10".to_string());
+    info!("using workers: {}", workers);
+    let workers = workers.parse::<usize>()
+        .unwrap_or_else(|_| panic!("invalid workers value: {}", port));
+
     let flights_counter_opts = opts!("flight_requests", "number of flight requests")
         .namespace("flights");
     let flights_counter = IntCounterVec::new(
@@ -102,7 +107,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(Data::new(flights_counter.clone()))
             .wrap(Logger::new("%a %{User-Agent}i"))
             .service(handle_flight)
-    ).workers(4)
+    ).workers(workers)
         .bind(("0.0.0.0", port))?
         .run()
         .await
