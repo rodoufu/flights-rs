@@ -8,3 +8,7 @@ clean:
 
 run:
 	docker run --rm --name "flights-rs" -p 8080:8080 flights-rs:latest
+
+
+test:
+	cargo +$(cat rust-toolchain) test
