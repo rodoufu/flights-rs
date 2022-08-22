@@ -58,8 +58,7 @@ impl FlightInfo for Flight {
     }
 
     fn path(&self) -> Result<Vec<String>, FlightError> {
-        let mut path = Vec::new();
-        path.push(self.source.clone());
+        let mut path = vec![self.source.clone()];
         let mut current = self.source.clone();
 
         while current != self.destination {
@@ -141,5 +140,139 @@ impl TryFrom<&FlightRequest> for FlightResponse {
             destination: flight.destination(),
             path,
         })
+    }
+}
+
+mod test {
+    use std::collections::HashMap;
+    use crate::flight::{
+        Flight,
+        FlightError,
+        FlightInfo,
+    };
+
+    #[test]
+    fn should_get_destination_not_found_for() {
+        // Given
+        let mut from_to: HashMap<String, String> = HashMap::new();
+        from_to.insert("SFO".to_string(), "IND".to_string());
+        let flight = Flight {
+            source: "SFO".to_string(),
+            destination: "EWR".to_string(),
+            from_to,
+        };
+
+        // When
+        let path = flight.path();
+
+        // Then
+        assert!(path.is_err());
+        let path = path.err().unwrap();
+        assert_eq!(FlightError::DestinationNotFoundFor("IND".to_string()), path);
+    }
+
+    #[test]
+    fn should_get_invalid_leg() {
+        // Given
+        let legs = vec![
+            vec!["SFO".to_string(), "EWR".to_string(), "SFO".to_string(), "EWR".to_string()],
+        ];
+
+        // When
+        let flight: Result<Flight, FlightError> = (&legs).try_into();
+
+        // Then
+        assert!(flight.is_err());
+        assert_eq!(FlightError::InvalidLeg(legs[0].clone()), flight.err().unwrap());
+    }
+
+    #[test]
+    fn should_get_invalid_airport_code() {
+        // Given
+        let legs = vec![
+            vec!["SFO".to_string(), "".to_string()],
+        ];
+
+        // When
+        let flight: Result<Flight, FlightError> = (&legs).try_into();
+
+        // Then
+        assert!(flight.is_err());
+        assert_eq!(FlightError::InvalidAirportCode("".to_string()), flight.err().unwrap());
+    }
+
+    #[test]
+    fn should_get_destination_not_found() {
+        // Given
+        let legs = vec![
+            vec!["A".to_string(), "B".to_string()],
+            vec!["B".to_string(), "C".to_string()],
+            vec!["B".to_string(), "C".to_string()],
+        ];
+
+        // When
+        let flight: Result<Flight, FlightError> = (&legs).try_into();
+
+        // Then
+        assert!(flight.is_err());
+        assert_eq!(FlightError::DestinationNotFound, flight.err().unwrap());
+    }
+
+    #[test]
+    fn should_not_get_a_flight() {
+        // Given
+        let legs = Vec::new();
+
+        // When
+        let flight: Result<Flight, FlightError> = (&legs).try_into();
+
+        // Then
+        assert!(flight.is_err());
+        assert_eq!(FlightError::SourceNotFound, flight.err().unwrap());
+    }
+
+    #[test]
+    fn should_get_a_flight_with_one_leg() {
+        // Given
+        let legs = vec![
+            vec!["SFO".to_string(), "EWR".to_string()],
+        ];
+
+        // When
+        let flight: Result<Flight, FlightError> = (&legs).try_into();
+
+        // Then
+        assert!(flight.is_ok());
+        let flight = flight.ok().unwrap();
+        assert_eq!("SFO".to_string(), flight.source());
+        assert_eq!("EWR".to_string(), flight.destination());
+
+        let path = flight.path();
+        assert!(path.is_ok());
+        let path = path.ok().unwrap();
+        assert_eq!(vec!["SFO".to_string(), "EWR".to_string()], path);
+    }
+
+    #[test]
+    fn should_get_a_flight_with_two_legs() {
+        // Given
+        let legs = vec![
+            vec!["SFO".to_string(), "EWR".to_string()],
+            vec!["EWR".to_string(), "IND".to_string()],
+        ];
+
+        // When
+        let flight: Result<Flight, FlightError> = (&legs).try_into();
+
+        // Then
+        assert!(flight.is_ok());
+        let flight = flight.ok().unwrap();
+        assert_eq!("SFO".to_string(), flight.source());
+        assert_eq!("IND".to_string(), flight.destination());
+
+        let path = flight.path();
+        assert!(path.is_ok());
+        let path = path.ok().unwrap();
+        assert_eq!(vec!["SFO".to_string(), "EWR".to_string(), "IND".to_string()], path);
     }
 }
